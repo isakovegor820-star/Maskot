@@ -15,8 +15,11 @@ const order = [
 ];
 for (const [i, name] of order.entries()) {
   const src = name.includes('-') ? join(root, 'inbetweens', `${name}.png`) : join(old, 'keyframes', `frame-${name}.png`);
+  const dest = join(root, 'keyframes', `frame-${String(i).padStart(2, '0')}.png`);
+  // The downloadable kit also works independently from the v2 source folder.
+  if (!existsSync(src) && existsSync(dest)) continue;
   if (!existsSync(src)) throw new Error(`Missing source: ${src}`);
-  copyFileSync(src, join(root, 'keyframes', `frame-${String(i).padStart(2, '0')}.png`));
+  copyFileSync(src, dest);
 }
 
 // Preserve original anchors and timing: old poses at 0,.3,.6,...,2.7s;
@@ -49,7 +52,7 @@ run([
 run(['-i', 'keyframes-locked.mkv', '-vf', 'tpad=stop_mode=clone:stop_duration=0.3,fps=30,trim=duration=3,setpts=PTS-STARTPTS', ...encode, 'manyasha-wave-19-clean.mp4']);
 run(['-i', 'manyasha-wave-19.mp4', '-vf', 'setpts=2*PTS,fps=30', '-an', '-c:v', 'libx264', '-crf', '18', '-movflags', '+faststart', 'qa/manyasha-wave-19-slow.mp4']);
 run([
-  '-i', join(old, 'manyasha-wave.mp4'), '-i', 'manyasha-wave-19.mp4',
+  '-i', existsSync(join(old, 'manyasha-wave.mp4')) ? join(old, 'manyasha-wave.mp4') : 'comparison-baseline-10.mp4', '-i', 'manyasha-wave-19.mp4',
   '-filter_complex', '[0:v]scale=720:540[l];[1:v]scale=720:540[r];[l][r]hstack=inputs=2[out]',
   '-map', '[out]', ...encode, 'comparison-10-vs-19.mp4',
 ]);
