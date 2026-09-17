@@ -1,0 +1,16 @@
+[
+  {
+    "id": "06-02-corrected",
+    "refs": [
+      "/Users/egor/Downloads/маняша войс /output/manyasha-wave-v2/keyframes/frame-06.png"
+    ],
+    "prompt": "Use case: precise-object-edit. Edit only the raised arm on the RIGHT SIDE of this image, holding the blue-and-silver pen. Create a single next animation frame: lower the mitten hand by JUST 40 pixels and move it right by 15 pixels, a very small motion. The new hand center should be near x=1165,y=440 on the SAME 1451x1084 canvas, level with the BOTTOM EDGE OF THE HEADSCARF. Keep the hand ABOVE the golden gavel, not down beside the belly. Keep the shoulder anchored; adapt the blue sleeve to that small movement. Keep one crisp rigid pen, cap UP and gold nib DOWN, almost vertical. Preserve the exact hand size, pen length and ceramic material. Everything except this arm and pen must stay unchanged: original eyes looking straight forward, face, headscarf, headset, book, torso, gavel and pedestal. Full mascot, exact same camera, scale, lighting, frame and position. Genuine transparent background. One sharp pose, no motion blur, no double exposure, no extra limbs or pen, no labels, no arrows. This is NOT a lowered resting arm: it remains raised near the shoulder."
+  },
+  {
+    "id": "04-05-corrected",
+    "refs": [
+      "/Users/egor/Downloads/маняша войс /output/manyasha-wave-v2/keyframes/frame-04.png"
+    ],
+    "prompt": "Use case: precise-object-edit. Produce ONE animation in-between frame by making a TINY change to the HIGH RAISED ARM on the RIGHT SIDE of this image. Move just the hand and pen 40 pixels to the right and 40 pixels down from their current high raised position. The hand stays HIGH, BESIDE HER LOWER CHEEK, its center around (1225,355) on this 1451x1084 image. Keep the arm raised diagonally UPWARD, never horizontal and never down at torso height. The hand stays ABOVE the bottom of the headscarf. Preserve the shoulder anchor. Bend the sleeve only slightly to accommodate this small movement. Preserve original arm length, hand size, single rigid pen length and angle, cap UP and gold nib DOWN. Keep everything else EXACTLY unchanged including forward gaze at viewer, closed mouth, face, camera, crop, book, body, chest gavel, pedestal and all text. Same glossy blue-and-white 3D ceramic material with crisp floral sleeve detail. Genuinely transparent alpha background. One hand and one pen, sharply drawn with no blur, no double exposure, no shadow halos, no arrows or labels. The difference from the input should be very subtle, not a new gesture."
+  }
+]

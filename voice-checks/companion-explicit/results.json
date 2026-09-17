@@ -1,0 +1,20 @@
+{
+  "mode": "explicit",
+  "profanity": "always",
+  "results": [
+    {
+      "prompt": "Как дела?",
+      "text": "Да у меня вообще всё заебись, хуярю потихоньку! А у тебя как делишки, дружище, ебать?",
+      "audioBytes": 255842,
+      "audioSeconds": 5.33,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/companion-explicit/1.wav"
+    },
+    {
+      "prompt": "Я пиздец устал сегодня, просто побудь со мной в разговоре, без советов.",
+      "text": "Понимаю, братан, реально пиздец хуёво, когда сил нет. Давай просто попиздим ни о чём, отвлечёшься, ебать.",
+      "audioBytes": 365282,
+      "audioSeconds": 7.61,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/companion-explicit/2.wav"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "reason": "Visual QA: frame 01 lift too large, 07 below expected trajectory, 08 severe matte halo and wrong height.",
+  "basePrompt": "Use the same full base prompt in PROMPTS.json, replacing the final action with the following.",
+  "frames": [
+    {
+      "n": 1,
+      "action": "Very subtle early-lift pose. The right arm still points DIAGONALLY DOWN and out just as in the input. White mitten stays BELOW the shoulder, approximately level with the gold gavel badge's lower end. Raise the white mitten by only a tiny amount (about one quarter of its diameter). Do NOT raise it to horizontal, shoulder height or head height. Preserve the length of the original sleeve and original wrist angle; only a tiny lift. Clean transparent alpha."
+    },
+    {
+      "n": 7,
+      "action": "Arm in the middle of lowering from a high wave. The RIGHT FOREARM POINTS HORIZONTALLY to the right. The center of the white mitten is at the SAME HEIGHT AS THE SHOULDER and the UPPER EDGE OF THE GOLD GAVEL BADGE, distinctly higher than original but lower than face. It must NOT hang down, must NOT fall below chest. Keep the book side untouched. Clean transparent alpha."
+    },
+    {
+      "n": 8,
+      "action": "Right arm almost back to neutral. It points diagonally down and out, with white mitten BELOW shoulder level, at the same height as the LOWEST EDGE OF THE GOLD BADGE. Raise the original right mitten only half of one mitten's height compared with input. Keep the hand well below face and headset. Do NOT raise arm high. Clean precise transparent cutout, absolutely no colored or gray glow, haze, outline or fringe."
+    }
+  ]
+}

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111018" />
+    <meta
+      name="description"
+      content="Маняша — голосовой маскот на Gemini Live с естественными ответами и быстрым перебиванием."
+    />
+    <title>Маняша — голосовой маскот</title>
+    <link rel="preload" as="image" href="/assets/manyasha-live.png" fetchpriority="high" />
+    <link rel="stylesheet" href="/styles.css?v=0.4.0" />
+    <script type="module" src="/app.js?v=0.7.0"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Перейти к разговору</a>
+
+    <div class="page-shell">
+      <header class="site-header" aria-label="Верхняя панель">
+        <a class="brand" href="/" aria-label="Маняша — главная">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Маняша</span>
+        </a>
+        <span class="model-badge">Gemini 3.1 Flash Live</span>
+      </header>
+
+      <main id="main" class="voice-layout">
+        <section class="voice-stage" aria-labelledby="page-title">
+          <div class="intro-copy">
+            <p class="eyebrow">Голосовой прототип</p>
+            <h1 id="page-title">Поговорим?</h1>
+            <p class="lede">
+              Нажмите кнопку и задайте любой вопрос. Маняша услышит вас, ответит голосом и остановится, если её перебить.
+            </p>
+          </div>
+
+          <div class="mascot-scene" aria-hidden="true">
+            <div class="aura aura-one"></div>
+            <div class="aura aura-two"></div>
+            <div id="mascot" class="mascot" data-state="idle">
+              <div class="mascot-presence-ring"></div>
+              <div class="mascot-figure">
+                <img
+                  class="mascot-image"
+                  src="/assets/manyasha-live.png"
+                  width="1451"
+                  height="1084"
+                  alt=""
+                  decoding="async"
+                  fetchpriority="high"
+                />
+                <span class="live-mouth">
+                  <span class="live-mouth-tongue"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="controls">
+            <div id="status" class="status-line" role="status" aria-live="polite">
+              <span class="status-dot" aria-hidden="true"></span>
+              <span id="status-text">Готова к разговору</span>
+            </div>
+
+            <button id="conversation-button" class="conversation-button" type="button" aria-pressed="false">
+              <span class="button-icon button-icon-start" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 15.25a3.5 3.5 0 0 0 3.5-3.5V6.5a3.5 3.5 0 1 0-7 0v5.25a3.5 3.5 0 0 0 3.5 3.5Z" />
+                  <path d="M5.75 11.25v.5a6.25 6.25 0 0 0 12.5 0v-.5M12 18v3M9 21h6" />
+                </svg>
+              </span>
+              <span class="button-icon button-icon-stop" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <rect x="7" y="7" width="10" height="10" rx="2" />
+                </svg>
+              </span>
+              <span id="button-label">Начать разговор</span>
+            </button>
+
+            <p class="permission-note">Браузер попросит доступ к микрофону</p>
+            <p id="active-settings" class="active-settings" aria-live="polite"></p>
+
+            <details class="settings">
+              <summary>Настройки разговора</summary>
+              <div class="settings-content">
+                <label for="mode-select">Режим разговора</label>
+                <select id="mode-select" name="mode" aria-describedby="mode-help">
+                  <option value="friend" selected>Друг 18+ — твой напарник</option>
+                  <option value="explicit">Матерный друг — всегда и по теме</option>
+                  <option value="expert">Эксперт — спокойно и точно</option>
+                  <option value="legal">Юрист — право и банкротство</option>
+                  <option value="roast">Жёсткий роаст — по согласию</option>
+                </select>
+                <p id="mode-help">Выслушает, поможет разобраться и подхватит шутку. Мат — свободно и по ситуации.</p>
+
+                <label for="profanity-select">Ненормативная лексика</label>
+                <select id="profanity-select" name="profanity" aria-describedby="profanity-help">
+                  <option value="off">Без мата</option>
+                  <option value="moderate">Умеренно и по контексту</option>
+                  <option value="free" selected>Свободно и по ситуации</option>
+                  <option value="always">В каждом ответе и по теме</option>
+                </select>
+                <p id="profanity-help">Живая речь в твоём стиле. Без обязательного мата в каждой реплике.</p>
+
+                <label for="voice-select">Голос маскота</label>
+                <select id="voice-select" name="voice">
+                  <option value="Kore">Kore — спокойный</option>
+                  <option value="Aoede">Aoede — мягкий</option>
+                  <option value="Puck" selected>Puck — живой</option>
+                  <option value="Fenrir">Fenrir — глубокий</option>
+                  <option value="Charon">Charon — сдержанный</option>
+                </select>
+                <p>Режим и голос можно изменить до начала разговора.</p>
+              </div>
+            </details>
+
+            <details class="settings memory-panel">
+              <summary>Что Маняша помнит <span id="memory-count">0 / 40</span></summary>
+              <div class="settings-content">
+                <p id="memory-help">Заметки хранятся только в этом браузере и передаются Gemini при разговоре. Важные факты можно сказать голосом: «Запомни…». Аудиозаписи не сохраняются.</p>
+                <p id="memory-session-note" hidden>Изменить память здесь можно после завершения разговора.</p>
+                <fieldset id="memory-controls">
+                  <legend class="sr-only">Управление памятью</legend>
+                  <label class="check-label" for="memory-enabled"><input id="memory-enabled" type="checkbox" checked aria-describedby="memory-help" /> Помнить важное между разговорами</label>
+                  <p id="memory-disabled-note" hidden>Память выключена: заметки остаются здесь, но не передаются Маняше. Можно включить память снова или удалить заметки.</p>
+                  <p id="memory-empty">Пока заметок нет. Расскажи, что для тебя важно, или добавь заметку ниже.</p>
+                  <ul id="memory-list" class="memory-list"></ul>
+                  <form id="memory-form">
+                    <fieldset id="memory-editor">
+                      <legend class="sr-only">Добавить или изменить заметку</legend>
+                      <label for="memory-kind">Тип заметки</label>
+                      <select id="memory-kind" name="kind">
+                        <option value="profile">О тебе</option><option value="preference">Как тебе удобнее</option>
+                        <option value="project">Проект</option><option value="goal">Цель</option><option value="event">Важное событие</option>
+                      </select>
+                      <label for="memory-text">Что запомнить</label>
+                      <textarea id="memory-text" name="note" rows="3" maxlength="400" aria-describedby="memory-text-help memory-error" placeholder="Например: сначала дай мне выговориться, потом предлагай решения."></textarea>
+                      <p id="memory-text-help">До 400 символов. Сохраняй конкретные факты и предпочтения.</p>
+                      <div class="memory-actions">
+                        <button id="memory-save" class="quiet-button" type="submit">Добавить заметку</button>
+                        <button id="memory-cancel" class="quiet-button" type="button" hidden>Отменить</button>
+                      </div>
+                    </fieldset>
+                  </form>
+                  <div class="memory-actions">
+                    <button id="memory-clear" class="quiet-button" type="button">Забыть всё</button>
+                    <button id="memory-undo" class="quiet-button" type="button" hidden>Вернуть удалённую заметку</button>
+                  </div>
+                  <div id="memory-confirm" hidden>
+                    <p>Удалить все заметки? Восстановить их не получится.</p>
+                    <div class="memory-actions">
+                      <button id="memory-confirm-delete" class="quiet-button" type="button">Удалить все заметки</button>
+                      <button id="memory-keep" class="quiet-button" type="button">Оставить заметки</button>
+                    </div>
+                  </div>
+                </fieldset>
+                <p id="memory-status" role="status"></p>
+                <p id="memory-error" role="alert" hidden></p>
+              </div>
+            </details>
+          </div>
+
+          <p id="error-message" class="error-message" role="alert" hidden></p>
+        </section>
+
+        <aside class="conversation-panel" aria-labelledby="conversation-heading">
+          <div class="panel-header">
+            <div>
+              <p class="panel-kicker">Текущая сессия</p>
+              <h2 id="conversation-heading">Разговор</h2>
+            </div>
+            <span id="session-time" class="session-time">00:00</span>
+          </div>
+
+          <div id="transcript" class="transcript" role="log" aria-live="polite" aria-relevant="additions text">
+            <div id="empty-transcript" class="empty-transcript">
+              <div class="empty-icon" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <p class="empty-title">Здесь появится диалог</p>
+              <p>Например: «Расскажи коротко, как ты работаешь».</p>
+            </div>
+          </div>
+
+          <dl class="metrics" aria-label="Показатели разговора">
+            <div>
+              <dt>Отклик</dt>
+              <dd id="latency-value">—</dd>
+            </div>
+            <div>
+              <dt>Соединение</dt>
+              <dd id="connection-value">Неактивно</dd>
+            </div>
+          </dl>
+        </aside>
+      </main>
+
+      <footer class="site-footer">
+        <p>Прототип работает напрямую с Gemini Live. Аудио не сохраняется приложением.</p>
+      </footer>
+    </div>
+  </body>
+</html>

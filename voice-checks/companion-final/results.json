@@ -1,0 +1,27 @@
+{
+  "mode": "friend",
+  "profanity": "free",
+  "results": [
+    {
+      "prompt": "Помнишь, как называется мой проект?",
+      "text": "Слушай, чё-то не припомню. Напомни, пожалуйста, как мы его с тобой назвали?",
+      "audioBytes": 226562,
+      "audioSeconds": 4.72,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/companion-final/1.wav"
+    },
+    {
+      "prompt": "Запомни: мой вымышленный учебный проект называется Маяк. Отдельно запомни, что я предпочитаю короткие ответы.",
+      "text": "Всё, запомнила — «Маяк» и отвечать короче. Заебись!",
+      "audioBytes": 182402,
+      "audioSeconds": 3.8,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/companion-final/2.wav"
+    },
+    {
+      "prompt": "Сколько будет семнадцать на восемь?",
+      "text": "Сто тридцать шесть.",
+      "audioBytes": 59522,
+      "audioSeconds": 1.24,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/companion-final/3.wav"
+    }
+  ]
+}

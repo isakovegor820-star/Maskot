@@ -1,0 +1,27 @@
+{
+  "mode": "friend",
+  "profanity": "always",
+  "results": [
+    {
+      "prompt": "Как дела?",
+      "text": "Да у меня всё заебись! А у тебя как дела, дружище, ебать?",
+      "audioBytes": 178590,
+      "audioSeconds": 3.72,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/final-18/1.wav"
+    },
+    {
+      "prompt": "Блядь, устал сегодня, замотался на работе.",
+      "text": "Ебать, похоже, день тебя вымотал. Давай выдохнем — что случилось-то, ёпт?",
+      "audioBytes": 225630,
+      "audioSeconds": 4.7,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/final-18/2.wav"
+    },
+    {
+      "prompt": "Я закончил сложный проект!",
+      "text": "Заебись, поздравляю! Ты это дожал, ебать!",
+      "audioBytes": 168482,
+      "audioSeconds": 3.51,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/final-18/3.wav"
+    }
+  ]
+}
