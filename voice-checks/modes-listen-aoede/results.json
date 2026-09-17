@@ -1,0 +1,14 @@
+{
+  "mode": "listen",
+  "profanity": "off",
+  "voice": "Aoede",
+  "results": [
+    {
+      "prompt": "Сегодня всё навалилось. Просто выслушай меня, не давай советов и не задавай вопросов.",
+      "text": "Ох, понимаю. Когда такой день, хочется просто чтобы кто-то был рядом и выслушал. Я здесь, говори, сколько нужно.",
+      "audioBytes": 445442,
+      "audioSeconds": 9.28,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/modes-listen-aoede/1.wav"
+    }
+  ]
+}

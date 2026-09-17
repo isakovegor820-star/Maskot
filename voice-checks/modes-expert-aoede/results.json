@@ -1,0 +1,14 @@
+{
+  "mode": "expert",
+  "profanity": "off",
+  "voice": "Aoede",
+  "results": [
+    {
+      "prompt": "Объясни одним предложением, почему небо кажется голубым. Не заканчивай вопросом.",
+      "text": "Солнечный свет, рассеиваясь в атмосфере, отражается преимущественно короткими волнами, которые мы воспринимаем как голубой цвет.",
+      "audioBytes": 396030,
+      "audioSeconds": 8.25,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/modes-expert-aoede/1.wav"
+    }
+  ]
+}

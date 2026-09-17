@@ -1,0 +1,14 @@
+{
+  "mode": "legal",
+  "profanity": "off",
+  "voice": "Aoede",
+  "results": [
+    {
+      "prompt": "Хочу подать на банкротство. Что делать?",
+      "text": "Понимаю ваше желание разобраться с долгами. В какой стране или юрисдикции рассматривается вопрос?",
+      "audioBytes": 276030,
+      "audioSeconds": 5.75,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/modes-legal-aoede-v2/1.wav"
+    }
+  ]
+}

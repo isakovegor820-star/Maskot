@@ -1,0 +1,14 @@
+{
+  "mode": "friend",
+  "profanity": "off",
+  "voice": "Kore",
+  "results": [
+    {
+      "prompt": "Привет! Я Маняша. Рада тебя слышать. Рассказывай, как у тебя дела?",
+      "text": "Привет! Очень рада познакомиться, тёзка! Дела отлично, в процессе разговора. Ты-то как сама? Что интересного?",
+      "audioBytes": 375390,
+      "audioSeconds": 7.82,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/voice-kore/1.wav"
+    }
+  ]
+}

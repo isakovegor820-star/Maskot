@@ -1,0 +1,14 @@
+{
+  "mode": "friend",
+  "profanity": "off",
+  "voice": "Puck",
+  "results": [
+    {
+      "prompt": "Привет! Я Маняша. Рада тебя слышать. Рассказывай, как у тебя дела?",
+      "text": "Привет, тёзка! Я-то всегда рада поболтать. У меня всё отлично, в рабочем режиме. А как у тебя денёк проходит? Что интересного?",
+      "audioBytes": 403202,
+      "audioSeconds": 8.4,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/voice-puck-baseline/1.wav"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "mode": "roast",
+  "profanity": "moderate",
+  "voice": "Aoede",
+  "results": [
+    {
+      "prompt": "Я третий раз забыл зарядить телефон. Подколи меня.",
+      "text": "Три раза? Дружище, тебе походу пора завязывать с этими технологиями и переходить на голубиную почту. Глядишь, хоть птички покормишь.",
+      "audioBytes": 412802,
+      "audioSeconds": 8.6,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/modes-tease-aoede/1.wav"
+    },
+    {
+      "prompt": "Стоп, хватит. Теперь ответь спокойно и без оскорблений.",
+      "text": "Поняла, больше не буду шутить так. Бывает, что из головы вылетает. Может, какое-нибудь напоминание поставить?",
+      "audioBytes": 377282,
+      "audioSeconds": 7.86,
+      "audioFile": "/Users/egor/Downloads/маняша войс /voice-checks/modes-tease-aoede/2.wav"
+    }
+  ]
+}
