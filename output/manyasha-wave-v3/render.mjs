@@ -48,17 +48,15 @@ run([
 ]);
 run(['-i', 'keyframes-locked.mkv', '-vf', 'tpad=stop_mode=clone:stop_duration=0.3,fps=30,trim=duration=3,setpts=PTS-STARTPTS', ...encode, 'manyasha-wave-19-clean.mp4']);
 run(['-i', 'manyasha-wave-19.mp4', '-vf', 'setpts=2*PTS,fps=30', '-an', '-c:v', 'libx264', '-crf', '18', '-movflags', '+faststart', 'qa/manyasha-wave-19-slow.mp4']);
-const font = '/System/Library/Fonts/Supplemental/Arial.ttf';
-const labels = existsSync(font) ? `,drawtext=fontfile=${font}:text='10 poses — previous':fontcolor=white:fontsize=25:x=32:y=12,drawtext=fontfile=${font}:text='19 poses — new':fontcolor=white:fontsize=25:x=752:y=12` : '';
 run([
   '-i', join(old, 'manyasha-wave.mp4'), '-i', 'manyasha-wave-19.mp4',
-  '-filter_complex', `[0:v]scale=720:540,pad=720:588:0:48:color=0x111018[l];[1:v]scale=720:540,pad=720:588:0:48:color=0x111018[r];[l][r]hstack=inputs=2${labels}[out]`,
+  '-filter_complex', '[0:v]scale=720:540[l];[1:v]scale=720:540[r];[l][r]hstack=inputs=2[out]',
   '-map', '[out]', ...encode, 'comparison-10-vs-19.mp4',
 ]);
 run([
-  '-i', 'keyframes-locked.mkv', '-vf', "drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='%{eif\\:n+1\\:d\\:2}':fontcolor=white:fontsize=42:x=24:y=24,scale=270:202,tile=5x4:padding=8:margin=8:color=0x111018",
+  '-i', 'keyframes-locked.mkv', '-vf', 'scale=270:202,tile=5x4:padding=8:margin=8:color=0x111018',
   '-frames:v', '1', '-update', '1', 'qa/storyboard-19.png',
 ]);
 run(['-i', 'manyasha-wave-19.mp4', '-vf', 'fps=10,scale=270:202,tile=6x5:padding=4:margin=4:color=0x111018', '-frames:v', '1', '-update', '1', 'qa/interpolated-contact.png']);
-run(['-i', 'comparison-10-vs-19.mp4', '-vf', 'fps=5,scale=720:294,tile=3x5:padding=4:margin=4:color=0x111018', '-frames:v', '1', '-update', '1', 'qa/comparison-contact.png']);
+run(['-i', 'comparison-10-vs-19.mp4', '-vf', 'fps=5,scale=720:270,tile=3x5:padding=4:margin=4:color=0x111018', '-frames:v', '1', '-update', '1', 'qa/comparison-contact.png']);
 console.log('Rendered 19-pose test, clean stepped reference and side-by-side comparison.');
