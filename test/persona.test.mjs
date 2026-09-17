@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   buildSystemInstruction,
@@ -8,18 +9,18 @@ import {
 
 const fixedNow = new Date("2026-09-17T12:00:00.000Z");
 
-test("default persona is the warm companion with contextual profanity", () => {
+test("default persona is the explicit friend with strong profanity", () => {
   const config = resolveConversationConfig();
-  assert.equal(config.mode, "friend");
-  assert.equal(config.profanity, "moderate");
+  assert.equal(config.mode, "explicit");
+  assert.equal(config.profanity, "always");
   const instruction = buildSystemInstruction();
-  assert.match(instruction, /Режим: «Подруга»/);
-  assert.match(instruction, /не матерись в каждом ответе/i);
+  assert.match(instruction, /Режим: «Матерный друг»/);
+  assert.match(instruction, /мат обязателен в каждом ответе/i);
 });
 
-test("legacy explicit mode migrates to companion with profanity in every answer", () => {
+test("explicit mode remains distinct and locks profanity in every answer", () => {
   const config = resolveConversationConfig("explicit", "off");
-  assert.equal(config.mode, "friend");
+  assert.equal(config.mode, "explicit");
   assert.equal(config.profanity, "always");
 
   const instruction = buildSystemInstruction({
@@ -28,9 +29,16 @@ test("legacy explicit mode migrates to companion with profanity in every answer"
     now: fixedNow,
     timezone: "Europe/Amsterdam",
   });
-  assert.match(instruction, /Режим: «Подруга»/);
+  assert.match(instruction, /Режим: «Матерный друг»/);
   assert.match(instruction, /ненормативн[а-яё]+ лексик[а-яё]+ обязательна в КАЖДОМ ответе/i);
   assert.match(instruction, /не проси собеседника не ругаться/i);
+});
+
+test("page defaults agree with the restored persona and preserve Aoede", () => {
+  const html = readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
+  assert.match(html, /value="explicit" selected>Матерный друг — жёстко и по теме/);
+  assert.match(html, /value="always" selected/);
+  assert.match(html, /value="Aoede" selected/);
 });
 
 test("listening mode forbids unsolicited advice", () => {
@@ -53,6 +61,23 @@ test("teasing mode stays consent-based and does not attack the person", () => {
   assert.match(config.modeDefinition.instruction, /одной короткой, ясной/i);
   assert.match(config.modeDefinition.instruction, /Не называй собеседника тупым/i);
   assert.match(config.modeDefinition.instruction, /Не используй диагнозы/i);
+});
+
+test("battle mode locks strong profanity and targets the consenting opponent", () => {
+  const config = resolveConversationConfig("battle", "off");
+  assert.equal(config.mode, "battle");
+  assert.equal(config.profanity, "always");
+  assert.match(config.modeDefinition.instruction, /жёсткие прямые оскорбления/i);
+  assert.match(config.modeDefinition.instruction, /Направляй панчи прямо на собеседника/i);
+  assert.match(config.modeDefinition.instruction, /Никогда не упоминай и не оскорбляй родителей/i);
+  assert.match(config.modeDefinition.instruction, /немедленно прекрати батл/i);
+});
+
+test("battle instructions override the general no-targeted-insults rule", () => {
+  const instruction = buildSystemInstruction({ mode: "battle", profanity: "off", now: fixedNow });
+  assert.match(instruction, /Режим: «Матерный батл»/);
+  assert.match(instruction, /кроме заранее согласованного режима «Матерный батл»/i);
+  assert.match(instruction, /действуют специальные правила этого режима/i);
 });
 
 test("legal mode asks one neutral jurisdiction question before analysis", () => {

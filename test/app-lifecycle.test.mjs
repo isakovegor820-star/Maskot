@@ -36,11 +36,11 @@ function fixture(fetchImpl = async () => ({ ok: true, json: async () => ({}) }),
     clearTimeout: (id) => timers.delete(id), clearInterval() {}, Intl, Date,
     performance: { now: () => now }, btoa, atob, ...extra });
   vm.runInContext(source, ctx);
-  const app = vm.runInContext("({ state, conversationContext, memoryStore, parseServerMessage, handleToolCall, refreshAfterForgetting, getSetupMessage, handleMicrophoneAudio, handleAudioChunk, interruptReply, finishPlayback, beginResponseWatchdog, StreamingPlayer, saveConversationSettings, loadConversationSettings, reconnectSession })", ctx);
+  const app = vm.runInContext("({ state, conversationContext, memoryStore, parseServerMessage, handleToolCall, refreshAfterForgetting, getSetupMessage, handleMicrophoneAudio, handleAudioChunk, interruptReply, finishPlayback, beginResponseWatchdog, StreamingPlayer, saveConversationSettings, loadConversationSettings, syncConversationSettings, reconnectSession })", ctx);
   app.state.sessionActive = true;
   app.state.websocket = new Socket();
   app.state.playback = { clear() {}, completeTurn() {} };
-  return { ...app, sent, document, timers, advance: (ms) => { now += ms; } };
+  return { ...app, sent, document, stored, timers, advance: (ms) => { now += ms; } };
 }
 
 test("completed transcripts enter reconnect context once; interrupted answers do not", async () => {
@@ -65,9 +65,35 @@ test("speaker echo never clears playback and protected microphone sends no audio
   assert.equal(clears, 0);
   assert.equal(app.sent.filter((message) => message.realtimeInput?.audio).length, 0);
   assert.equal(app.sent.filter((message) => message.realtimeInput?.audioStreamEnd).length, 1);
-  app.finishPlayback(); app.advance(301);
+  app.finishPlayback(); app.advance(101);
   app.handleMicrophoneAudio(new Float32Array(640), 0);
   assert.equal(app.sent.filter((message) => message.realtimeInput?.audio).length, 1);
+});
+
+test("local end of speech finalizes the turn after sending the last audio chunk", () => {
+  const app = fixture(); app.state.connected = true;
+  app.handleMicrophoneAudio(new Float32Array(640).fill(.05), .05);
+  app.advance(40);
+  app.handleMicrophoneAudio(new Float32Array(640).fill(.05), .05);
+  app.advance(40);
+  app.handleMicrophoneAudio(new Float32Array(640), 0);
+  app.advance(520);
+  app.handleMicrophoneAudio(new Float32Array(640), 0);
+
+  const audioIndex = app.sent.findLastIndex((message) => message.realtimeInput?.audio);
+  const endIndex = app.sent.findLastIndex((message) => message.realtimeInput?.audioStreamEnd);
+  assert.equal(app.sent.filter((message) => message.realtimeInput?.audioStreamEnd).length, 1);
+  assert.ok(endIndex > audioIndex);
+  assert.equal(app.document.querySelector("#status").dataset.state, "connecting");
+  assert.equal(app.document.querySelector("#status-text").textContent, "Думаю");
+});
+
+test("server VAD remains a conservative fallback for local speech detection", () => {
+  const app = fixture();
+  const vad = app.getSetupMessage().setup.realtimeInputConfig.automaticActivityDetection;
+  assert.equal(vad.disabled, false);
+  assert.equal(vad.prefixPaddingMs, 100);
+  assert.equal(vad.silenceDurationMs, 650);
 });
 
 test("opt-in voice interruption leaves RMS spikes to server VAD", async () => {
@@ -125,6 +151,37 @@ test("text without model audio never switches to a browser voice", async () => {
   } });
   assert.equal(app.state.replyPlaying, false);
   assert.match(app.document.querySelector("#error-message").textContent, /другой голос не включён/i);
+});
+
+test("v3 migration restores explicit once while preserving voice, interruption and memory", () => {
+  const app = fixture(); const controls = app.document.querySelector;
+  app.memoryStore.save({ text: "Тестовый факт" });
+  app.stored.set("manyasha.conversation.v3", JSON.stringify({ mode: "friend", profanity: "moderate", voice: "Kore", voiceInterrupt: true }));
+  app.loadConversationSettings(); app.syncConversationSettings(); app.saveConversationSettings();
+  assert.equal(controls("#mode-select").value, "explicit");
+  assert.equal(controls("#profanity-select").value, "always");
+  assert.equal(controls("#voice-select").value, "Kore");
+  assert.equal(controls("#voice-interrupt").checked, true);
+  assert.match(app.getSetupMessage().setup.systemInstruction.parts[0].text, /Режим: «Матерный друг»/);
+  controls("#mode-select").value = "listen";
+  app.syncConversationSettings({ modeChanged: true }); app.saveConversationSettings();
+  controls("#mode-select").value = "explicit";
+  app.loadConversationSettings(); app.memoryStore.load();
+  assert.equal(controls("#mode-select").value, "listen");
+  assert.equal(controls("#profanity-select").value, "off");
+  assert.equal(app.memoryStore.forSession()[0].text, "Тестовый факт");
+});
+
+test("restored mode locks profanity only until switching to a regular mode", () => {
+  const app = fixture(); app.state.sessionActive = false;
+  const controls = app.document.querySelector;
+  app.loadConversationSettings(); app.syncConversationSettings();
+  assert.equal(controls("#mode-select").value, "explicit");
+  assert.equal(controls("#profanity-select").disabled, true);
+  controls("#mode-select").value = "friend";
+  app.syncConversationSettings({ modeChanged: true });
+  assert.equal(controls("#profanity-select").value, "moderate");
+  assert.equal(controls("#profanity-select").disabled, false);
 });
 
 test("stopping an already generated answer does not swallow the next answer", () => {

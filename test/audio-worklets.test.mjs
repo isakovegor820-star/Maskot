@@ -14,6 +14,15 @@ function worklet(file, sampleRate = 48000) {
   } };
 }
 
+test("playback begins after a 30 ms safety buffer", () => {
+  const player = worklet("playback.worklet.js");
+  assert.equal(player.processor.minBufferedFrames, 1440);
+  player.send({ type: "push", samples: new Float32Array(1439).fill(.25) });
+  assert.equal(player.processor.started, false);
+  player.send({ type: "push", samples: new Float32Array(1).fill(.25) });
+  assert.equal(player.processor.started, true);
+});
+
 test("late turnComplete acknowledges audio already drained during a network gap", () => {
   const player = worklet("playback.worklet.js");
   player.send({ type: "push", samples: new Float32Array(4096).fill(.25) });

@@ -7,7 +7,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     this.bufferedFrames = 0;
     this.started = false;
     this.turnComplete = false;
-    this.minBufferedFrames = Math.round(sampleRate * 0.06);
+    this.minBufferedFrames = Math.round(sampleRate * 0.03);
     this.framesSinceLevel = 0;
     this.generation = 0;
 

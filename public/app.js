@@ -2,7 +2,7 @@ import {
   MODE_DEFINITIONS,
   buildSystemInstruction,
   resolveConversationConfig,
-} from "/persona.js?v=0.5.0";
+} from "/persona.js?v=0.7.0";
 import { MEMORY_KEY, MemoryStore, ConversationContext, runMemoryTool } from "./memory.js";
 import { createMemoryPanel } from "./memory-panel.js";
 import { COMPANION_TOOLS } from "./companion-tools.js";
@@ -15,6 +15,8 @@ const conversationContext = new ConversationContext();
 let memoryPanel = null;
 
 const MODEL = "gemini-3.1-flash-live-preview";
+const LOCAL_SPEECH_END_SILENCE_MS = 520;
+const MIC_RESUME_DELAY_MS = 100;
 const LIVE_ENDPOINT =
   "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained";
 
@@ -36,7 +38,9 @@ const elements = {
   sessionTime: document.querySelector("#session-time"),
   settings: document.querySelector(".settings"),
   status: document.querySelector("#status"),
+  statusDetail: document.querySelector("#status-detail"),
   statusText: document.querySelector("#status-text"),
+  assistantState: document.querySelector("#assistant-state"),
   transcript: document.querySelector("#transcript"),
   voice: document.querySelector("#voice-select"),
 };
@@ -86,8 +90,24 @@ const state = {
 };
 
 function setUiState(nextState, text) {
+  const stateLabels = {
+    idle: "Готова к разговору",
+    listening: "Слушаю",
+    connecting: "Думаю",
+    speaking: "Отвечаю",
+    error: "Нужна помощь",
+  };
+  const stateDetails = {
+    idle: "Нажмите на микрофон, чтобы начать",
+    listening: "Говорите, я слушаю. Можно перебить в любой момент.",
+    connecting: "Подбираю лучший ответ",
+    speaking: "Маняша отвечает. При необходимости нажмите «Перебить».",
+    error: text || "Проверьте подключение и попробуйте снова",
+  };
   elements.status.dataset.state = nextState;
-  elements.statusText.textContent = text;
+  elements.statusText.textContent = stateLabels[nextState] ?? text;
+  if (elements.statusDetail) elements.statusDetail.textContent = stateDetails[nextState] ?? text;
+  if (elements.assistantState) elements.assistantState.textContent = stateLabels[nextState] ?? text;
   elements.mascot.dataset.state = nextState;
   elements.interrupt.disabled = !state.sessionActive || !state.replyPlaying;
   elements.connection.textContent =
@@ -105,6 +125,7 @@ function setConversationControls(active) {
   elements.button.setAttribute("aria-pressed", String(active));
   elements.button.setAttribute("aria-busy", String(active && state.connecting));
   elements.buttonLabel.textContent = active ? "Завершить разговор" : "Начать разговор";
+  elements.button.setAttribute("aria-label", active ? "Завершить разговор" : "Начать разговор");
   elements.voice.disabled = active;
   elements.mode.disabled = active;
   elements.voiceInterrupt.disabled = active;
@@ -353,7 +374,6 @@ function resampleLinear(samples, sourceRate, targetRate) {
 
 function handleLocalVoiceActivity(rms) {
   const speakingThreshold = 0.009;
-  const endSilenceMs = 620;
   const now = performance.now();
 
   if (rms >= speakingThreshold) {
@@ -367,15 +387,15 @@ function handleLocalVoiceActivity(rms) {
       // may discard an answer; a fan/click/echo must never clear playback here.
       state.latencyCapturedForTurn = false;
     }
-    return;
+    return false;
   }
 
   if (state.localSpeechFrames < 2) {
     state.localSpeechFrames = 0;
-    return;
+    return false;
   }
   if (state.localSilenceStartedAt === null) state.localSilenceStartedAt = now;
-  if (now - state.localSilenceStartedAt >= endSilenceMs) {
+  if (now - state.localSilenceStartedAt >= LOCAL_SPEECH_END_SILENCE_MS) {
     state.localSpeechFrames = 0;
     state.localSilenceStartedAt = null;
     state.localSpeechActive = false;
@@ -385,7 +405,9 @@ function handleLocalVoiceActivity(rms) {
       setUiState("connecting", "Формулирую ответ");
       beginResponseWatchdog();
     }
+    return true;
   }
+  return false;
 }
 
 function handleMicrophoneAudio(samples, rms) {
@@ -398,7 +420,7 @@ function handleMicrophoneAudio(samples, rms) {
     return;
   }
   state.micPaused = false;
-  handleLocalVoiceActivity(rms);
+  const speechEnded = handleLocalVoiceActivity(rms);
   send({
     realtimeInput: {
       audio: {
@@ -407,6 +429,9 @@ function handleMicrophoneAudio(samples, rms) {
       },
     },
   });
+  // Hybrid VAD: server detection protects the beginning of speech, while the
+  // local detector finalizes the turn without waiting for the server timeout.
+  if (speechEnded) send({ realtimeInput: { audioStreamEnd: true } });
 }
 
 function resetLocalSpeech() {
@@ -426,7 +451,7 @@ function finishPlayback() {
   state.modelAudioReceivedInTurn = false;
   state.pendingTurnComplete = false;
   state.turnOutputText = "";
-  state.micResumeAt = performance.now() + 300;
+  state.micResumeAt = performance.now() + MIC_RESUME_DELAY_MS;
   resetLocalSpeech();
   if (state.sessionActive) setUiState(state.connected ? "listening" : "connecting", state.connected ? "Слушаю вас" : "Восстанавливаю разговор");
 }
@@ -450,14 +475,21 @@ function createMessage(speaker) {
   article.dataset.speaker = speaker;
   article.dataset.pending = "true";
 
+  if (speaker !== "user") {
+    const avatar = document.createElement("span");
+    avatar.className = "message-avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    article.append(avatar);
+  }
+
   const label = document.createElement("span");
   label.className = "message-label";
-  label.textContent = speaker === "user" ? "Вы" : "Маняша";
+  label.textContent = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date());
 
   const text = document.createElement("p");
   text.className = "message-text";
 
-  article.append(label, text);
+  article.append(text, label);
   elements.transcript.append(article);
   elements.transcript.scrollTop = elements.transcript.scrollHeight;
   return article;
@@ -784,8 +816,8 @@ function getSetupMessage(resumptionHandle = null) {
       realtimeInputConfig: {
         automaticActivityDetection: {
           disabled: false,
-          prefixPaddingMs: 180,
-          silenceDurationMs: 800,
+          prefixPaddingMs: 100,
+          silenceDurationMs: 650,
           startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
           endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
         },
@@ -1069,7 +1101,7 @@ async function disconnect({ preserveError = false } = {}) {
   resetUi();
 }
 
-const SETTINGS_KEY = "manyasha.conversation.v3";
+const SETTINGS_KEY = "manyasha.conversation.v4";
 
 function saveConversationSettings() {
   try {
@@ -1082,13 +1114,266 @@ function saveConversationSettings() {
 
 function loadConversationSettings() {
   try {
-    const saved = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || "null");
-    if (!saved) return;
+    let saved = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || "null");
+    if (!saved) {
+      // Restore the requested default once, keeping voice and microphone preferences.
+      const legacy = JSON.parse(window.localStorage.getItem("manyasha.conversation.v3") || "null");
+      saved = { ...legacy, mode: "explicit", profanity: "always" };
+    }
     if (MODE_DEFINITIONS[saved.mode]) elements.mode.value = saved.mode;
     if (["off", "moderate", "free", "always"].includes(saved.profanity)) elements.profanity.value = saved.profanity;
     if (["Kore", "Aoede", "Puck", "Fenrir", "Charon"].includes(saved.voice)) elements.voice.value = saved.voice;
     elements.voiceInterrupt.checked = saved.voiceInterrupt === true;
   } catch { /* Keep the safe conversation defaults if preferences are invalid. */ }
+}
+
+const topicLibrary = [
+  {
+    id: "weekend",
+    title: "Планы на выходные",
+    subtitle: "Обсуждаем идеи и строим планы",
+    activity: "Сейчас",
+    messages: [
+      { speaker: "user", text: "Привет, Маняша! Какие идеи для выходных можешь предложить?", time: "10:24" },
+      { speaker: "model", text: "Привет! Есть несколько идей: погулять в новом парке, съездить в ближайший город, сходить в музей или устроить киновечер дома. Что тебе сейчас больше по настроению?", time: "10:24" },
+      { speaker: "user", text: "Давай подробнее про поездку в ближайший город.", time: "10:25" },
+      { speaker: "model", text: "Конечно. Подберём место в пределах двух часов пути, уютное кафе и один интересный маршрут без спешки.", time: "10:25" },
+    ],
+  },
+  {
+    id: "work",
+    title: "Работа",
+    subtitle: "Разбираем задачи и наводим порядок",
+    activity: "Вчера",
+    messages: [
+      { speaker: "user", text: "Помоги разложить большую задачу на понятные шаги.", time: "18:42" },
+      { speaker: "model", text: "Давай начнём с результата, который нужен к концу недели, а потом выделим три ближайших действия.", time: "18:43" },
+    ],
+  },
+  {
+    id: "travel",
+    title: "Идеи для поездки",
+    subtitle: "Собираем маршрут и полезные детали",
+    activity: "3 дня назад",
+    messages: [
+      { speaker: "user", text: "Хочу ненадолго сменить обстановку. Куда можно поехать без сложной подготовки?", time: "12:10" },
+      { speaker: "model", text: "Можно выбрать небольшой город рядом, природный маршрут или спокойный спа-отель. Сколько времени ты готова провести в дороге?", time: "12:11" },
+    ],
+  },
+];
+
+const quickAnswers = {
+  "Куда поехать на выходные?": "Для короткой поездки я бы искала уютный город в пределах двух часов пути. Скажи, откуда выезжаем и хочется больше прогулок, природы или гастрономии?",
+  "Где вкусно поесть?": "Подберу место под настроение. Назови город, примерный бюджет и что хочется: уютный завтрак, необычная кухня или красивый вечерний ужин.",
+  "Идеи для активного отдыха": "Можно выбрать веломаршрут, прогулку по экотропе, скалодром или день на воде. Насколько активным должен быть отдых?",
+  "Другой вопрос": "Я рядом. Нажми на микрофон и спроси о чём угодно — можно говорить своими словами.",
+};
+
+let activeTopicId = topicLibrary[0].id;
+let noticeTimer = null;
+let demoReplyTimer = null;
+let lastDrawerTrigger = null;
+
+function createInterfaceIcon(symbolId) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#${symbolId}`);
+  svg.setAttribute("aria-hidden", "true");
+  svg.append(use);
+  return svg;
+}
+
+function showNotice(message) {
+  const notice = document.querySelector("#ui-notice");
+  if (!notice) return;
+  clearTimeout(noticeTimer);
+  notice.textContent = message;
+  notice.classList.add("is-visible");
+  noticeTimer = setTimeout(() => notice.classList.remove("is-visible"), 2600);
+}
+
+function activeTopic() {
+  return topicLibrary.find((topic) => topic.id === activeTopicId) ?? topicLibrary[0];
+}
+
+function appendDisplayMessage(message) {
+  const article = document.createElement("article");
+  article.className = "message";
+  article.dataset.speaker = message.speaker;
+  article.dataset.pending = "false";
+  if (message.speaker !== "user") {
+    const avatar = document.createElement("span");
+    avatar.className = "message-avatar";
+    avatar.setAttribute("aria-hidden", "true");
+    article.append(avatar);
+  }
+  const bubble = document.createElement("p");
+  bubble.className = "message-bubble";
+  bubble.textContent = message.text;
+  const meta = document.createElement("span");
+  meta.className = "message-meta";
+  meta.textContent = message.time;
+  article.append(bubble, meta);
+  elements.transcript.append(article);
+  elements.transcript.scrollTop = elements.transcript.scrollHeight;
+  return article;
+}
+
+function renderTopicList() {
+  const list = document.querySelector("#topic-list");
+  if (!list) return;
+  list.replaceChildren();
+  for (const topic of topicLibrary) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "topic-button";
+    button.dataset.topicId = topic.id;
+    if (topic.id === activeTopicId) button.setAttribute("aria-current", "page");
+    const icon = document.createElement("span");
+    icon.className = "topic-icon";
+    icon.append(createInterfaceIcon("icon-message"));
+    const copy = document.createElement("span");
+    copy.className = "topic-copy";
+    const title = document.createElement("strong");
+    title.textContent = topic.title;
+    const activity = document.createElement("span");
+    activity.textContent = topic.activity;
+    copy.append(title, activity);
+    button.append(icon, copy);
+    button.addEventListener("click", () => selectTopic(topic.id));
+    list.append(button);
+  }
+}
+
+function saveVisibleMessages() {
+  const topic = activeTopic();
+  const visible = [...elements.transcript.querySelectorAll(".message")].map((article) => ({
+    speaker: article.dataset.speaker,
+    text: article.querySelector(".message-text, .message-bubble")?.textContent?.replace(/…$/, "").trim() ?? "",
+    time: article.querySelector(".message-label, .message-meta")?.textContent?.trim() || "Сейчас",
+  })).filter((message) => message.text);
+  if (visible.length) topic.messages = visible;
+}
+
+function renderActiveTopic() {
+  const topic = activeTopic();
+  document.querySelector("#conversation-title").textContent = topic.title;
+  document.querySelector("#conversation-subtitle").textContent = topic.subtitle;
+  elements.transcript.replaceChildren();
+  if (!topic.messages.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-transcript";
+    const title = document.createElement("strong");
+    title.textContent = "Начните новую беседу";
+    const copy = document.createElement("p");
+    copy.textContent = "Нажмите на микрофон или выберите быстрый вопрос ниже.";
+    empty.append(title, copy);
+    elements.transcript.append(empty);
+  } else {
+    for (const message of topic.messages) appendDisplayMessage(message);
+    elements.transcript.scrollTop = elements.transcript.scrollHeight;
+  }
+}
+
+function selectTopic(topicId) {
+  if (topicId === activeTopicId) {
+    closeDrawers(false);
+    return;
+  }
+  if (state.sessionActive) {
+    showNotice("Завершите голосовой разговор, чтобы сменить тему.");
+    return;
+  }
+  clearTimeout(demoReplyTimer);
+  saveVisibleMessages();
+  activeTopicId = topicId;
+  renderTopicList();
+  renderActiveTopic();
+  closeDrawers(false);
+  document.querySelector("#conversation-title")?.focus?.({ preventScroll: true });
+}
+
+function startRename() {
+  const form = document.querySelector("#rename-form");
+  const input = document.querySelector("#rename-input");
+  const titleRow = document.querySelector(".conversation-title-row");
+  titleRow.hidden = true;
+  form.hidden = false;
+  input.value = activeTopic().title;
+  input.focus();
+  input.select();
+}
+
+function cancelRename() {
+  document.querySelector("#rename-form").hidden = true;
+  document.querySelector(".conversation-title-row").hidden = false;
+  document.querySelector("#rename-topic-button").focus();
+}
+
+function openDrawer(panel, trigger) {
+  closeDrawers(false);
+  lastDrawerTrigger = trigger;
+  panel.classList.add("is-open");
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  trigger.setAttribute("aria-expanded", "true");
+  document.querySelector(".site-header").inert = true;
+  document.querySelector(".conversation-stage").inert = true;
+  document.querySelectorAll(".topics-panel, .assistant-panel").forEach((candidate) => {
+    candidate.inert = candidate !== panel;
+  });
+  const scrim = document.querySelector("#drawer-scrim");
+  scrim.hidden = false;
+  panel.querySelector("[data-close-drawer]")?.focus();
+}
+
+function closeDrawers(restoreFocus = true) {
+  document.querySelectorAll(".topics-panel, .assistant-panel").forEach((panel) => {
+    panel.classList.remove("is-open");
+    panel.inert = false;
+    panel.removeAttribute("role");
+    panel.removeAttribute("aria-modal");
+  });
+  document.querySelector(".site-header").inert = false;
+  document.querySelector(".conversation-stage").inert = false;
+  document.querySelector("#history-button")?.setAttribute("aria-expanded", "false");
+  document.querySelector("#assistant-button")?.setAttribute("aria-expanded", "false");
+  const scrim = document.querySelector("#drawer-scrim");
+  if (scrim) scrim.hidden = true;
+  if (restoreFocus) lastDrawerTrigger?.focus();
+  lastDrawerTrigger = null;
+}
+
+function handleQuickPrompt(prompt) {
+  clearTimeout(demoReplyTimer);
+  const topic = activeTopic();
+  if (elements.transcript.querySelector(".empty-transcript")) elements.transcript.replaceChildren();
+  const now = new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date());
+  const userMessage = { speaker: "user", text: prompt, time: now };
+  topic.messages.push(userMessage);
+  appendDisplayMessage(userMessage);
+
+  if (state.sessionActive && state.connected) {
+    state.turnUserText = prompt;
+    setUiState("connecting", "Подбираю ответ");
+    beginResponseWatchdog();
+    send({ clientContent: { turns: [{ role: "user", parts: [{ text: prompt }] }], turnComplete: true } });
+    return;
+  }
+  if (state.sessionActive) {
+    showNotice("Маняша подключается. Попробуйте вопрос через пару секунд.");
+    return;
+  }
+
+  setUiState("connecting", "Подбираю ответ");
+  const delay = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 650;
+  demoReplyTimer = setTimeout(() => {
+    if (activeTopicId !== topic.id || state.sessionActive) return;
+    const reply = { speaker: "model", text: quickAnswers[prompt] ?? quickAnswers["Другой вопрос"], time: new Intl.DateTimeFormat("ru-RU", { hour: "2-digit", minute: "2-digit" }).format(new Date()) };
+    topic.messages.push(reply);
+    appendDisplayMessage(reply);
+    setUiState("idle", "Готова к разговору");
+  }, delay);
 }
 
 elements.button.addEventListener("click", () => {
@@ -1110,6 +1395,96 @@ elements.profanity.addEventListener("change", () => {
 elements.voice.addEventListener("change", () => { syncConversationSettings(); saveConversationSettings(); });
 elements.voiceInterrupt.addEventListener("change", () => { syncConversationSettings(); saveConversationSettings(); });
 
+document.querySelector("#history-button")?.addEventListener("click", (event) => {
+  if (window.matchMedia("(max-width: 48rem)").matches) {
+    openDrawer(document.querySelector("#topics-panel"), event.currentTarget);
+  } else {
+    document.querySelector('.topic-button[aria-current="page"]')?.focus();
+  }
+});
+
+document.querySelector("#assistant-button")?.addEventListener("click", (event) => {
+  if (window.matchMedia("(max-width: 74rem)").matches) {
+    openDrawer(document.querySelector("#assistant-panel"), event.currentTarget);
+  } else {
+    const heading = document.querySelector("#assistant-heading");
+    heading.setAttribute("tabindex", "-1");
+    heading.focus();
+  }
+});
+
+document.querySelectorAll("[data-close-drawer]").forEach((button) => button.addEventListener("click", () => closeDrawers()));
+document.querySelector("#drawer-scrim")?.addEventListener("click", () => closeDrawers());
+
+document.querySelector("#settings-button")?.addEventListener("click", () => {
+  const dialog = document.querySelector("#settings-dialog");
+  if (!dialog.open) dialog.showModal();
+});
+document.querySelector("#settings-close")?.addEventListener("click", () => document.querySelector("#settings-dialog")?.close());
+document.querySelector("#settings-dialog")?.addEventListener("click", (event) => {
+  if (event.target === event.currentTarget) event.currentTarget.close();
+});
+
+document.querySelector("#new-topic-button")?.addEventListener("click", () => {
+  if (state.sessionActive) {
+    showNotice("Завершите голосовой разговор, чтобы создать новую тему.");
+    return;
+  }
+  saveVisibleMessages();
+  const topic = { id: `topic-${Date.now()}`, title: "Новый разговор", subtitle: "Новая тема для разговора", activity: "Сейчас", messages: [] };
+  topicLibrary.unshift(topic);
+  activeTopicId = topic.id;
+  renderTopicList();
+  renderActiveTopic();
+  closeDrawers(false);
+  startRename();
+});
+
+document.querySelector("#rename-topic-button")?.addEventListener("click", startRename);
+document.querySelector("#rename-cancel")?.addEventListener("click", cancelRename);
+document.querySelector("#rename-form")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const nextTitle = document.querySelector("#rename-input").value.trim();
+  if (!nextTitle) {
+    showNotice("Введите название темы.");
+    document.querySelector("#rename-input").focus();
+    return;
+  }
+  activeTopic().title = nextTitle;
+  renderTopicList();
+  document.querySelector("#conversation-title").textContent = nextTitle;
+  cancelRename();
+  showNotice("Тема переименована.");
+});
+
+document.querySelector("#archive-button")?.addEventListener("click", () => showNotice("В архиве пока нет разговоров."));
+document.querySelectorAll("[data-prompt]").forEach((button) => button.addEventListener("click", () => handleQuickPrompt(button.dataset.prompt)));
+
+document.addEventListener("keydown", (event) => {
+  const openDrawerPanel = document.querySelector(".topics-panel.is-open, .assistant-panel.is-open");
+  if (event.key === "Tab" && openDrawerPanel) {
+    const focusable = [...openDrawerPanel.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter((control) => control.getClientRects().length > 0);
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+    return;
+  }
+  if (event.key === "Escape") {
+    if (!document.querySelector("#rename-form")?.hidden) cancelRename();
+    closeDrawers();
+  }
+});
+
+renderTopicList();
+renderActiveTopic();
+
 window.addEventListener("pagehide", () => {
   const socket = state.websocket;
   state.websocket = null;
@@ -1127,3 +1502,4 @@ window.addEventListener("storage", async (event) => {
 });
 loadConversationSettings();
 syncConversationSettings();
+saveConversationSettings();
