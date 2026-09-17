@@ -550,7 +550,7 @@ h1 {
   display: grid;
   gap: 0.65rem;
 }
-.memory-panel .check-label {
+.settings .check-label {
   display: flex;
   align-items: center;
   gap: 0.65rem;

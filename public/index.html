@@ -11,7 +11,7 @@
     <title>Маняша — голосовой маскот</title>
     <link rel="preload" as="image" href="/assets/manyasha-live.png" fetchpriority="high" />
     <link rel="stylesheet" href="/styles.css?v=0.4.0" />
-    <script type="module" src="/app.js?v=0.7.0"></script>
+    <script type="module" src="/app.js?v=0.9.0"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Перейти к разговору</a>
@@ -31,7 +31,7 @@
             <p class="eyebrow">Голосовой прототип</p>
             <h1 id="page-title">Поговорим?</h1>
             <p class="lede">
-              Нажмите кнопку и задайте любой вопрос. Маняша услышит вас, ответит голосом и остановится, если её перебить.
+              Нажмите кнопку и задайте вопрос. Маняша ответит голосом. По умолчанию она договаривает до конца; остановить ответ можно кнопкой «Перебить ответ».
             </p>
           </div>
 
@@ -78,6 +78,8 @@
               <span id="button-label">Начать разговор</span>
             </button>
 
+            <button id="interrupt-button" class="quiet-button" type="button" disabled>Перебить ответ</button>
+
             <p class="permission-note">Браузер попросит доступ к микрофону</p>
             <p id="active-settings" class="active-settings" aria-live="polite"></p>
 
@@ -86,32 +88,35 @@
               <div class="settings-content">
                 <label for="mode-select">Режим разговора</label>
                 <select id="mode-select" name="mode" aria-describedby="mode-help">
-                  <option value="friend" selected>Друг 18+ — твой напарник</option>
-                  <option value="explicit">Матерный друг — всегда и по теме</option>
-                  <option value="expert">Эксперт — спокойно и точно</option>
+                  <option value="friend" selected>Подруга — тепло и по-человечески</option>
+                  <option value="listen">Просто выслушай — без советов</option>
+                  <option value="plan">Разберём и сделаем — один шаг</option>
+                  <option value="expert">По делу — спокойно и точно</option>
                   <option value="legal">Юрист — право и банкротство</option>
-                  <option value="roast">Жёсткий роаст — по согласию</option>
+                  <option value="roast">Лёгкий стёб — без унижений</option>
                 </select>
-                <p id="mode-help">Выслушает, поможет разобраться и подхватит шутку. Мат — свободно и по ситуации.</p>
+                <p id="mode-help">Тёплый живой разговор: выслушает, поддержит и поможет, когда вы об этом попросите.</p>
 
                 <label for="profanity-select">Ненормативная лексика</label>
                 <select id="profanity-select" name="profanity" aria-describedby="profanity-help">
                   <option value="off">Без мата</option>
-                  <option value="moderate">Умеренно и по контексту</option>
-                  <option value="free" selected>Свободно и по ситуации</option>
+                  <option value="moderate" selected>Умеренно и по контексту</option>
+                  <option value="free">Свободно и по ситуации</option>
                   <option value="always">В каждом ответе и по теме</option>
                 </select>
-                <p id="profanity-help">Живая речь в твоём стиле. Без обязательного мата в каждой реплике.</p>
+                <p id="profanity-help">Маняша может материться уместно, но не превращает ответ в поток ругани.</p>
 
                 <label for="voice-select">Голос маскота</label>
                 <select id="voice-select" name="voice">
                   <option value="Kore">Kore — спокойный</option>
-                  <option value="Aoede">Aoede — мягкий</option>
-                  <option value="Puck" selected>Puck — живой</option>
+                  <option value="Aoede" selected>Aoede — мягкий и молодой</option>
+                  <option value="Puck">Puck — живой</option>
                   <option value="Fenrir">Fenrir — глубокий</option>
                   <option value="Charon">Charon — сдержанный</option>
                 </select>
-                <p>Режим и голос можно изменить до начала разговора.</p>
+                <p>Режим и голос можно изменить до начала разговора. Выбранный голос остаётся единственным голосом сессии: системная подмена не используется.</p>
+                <label class="check-label" for="voice-interrupt"><input id="voice-interrupt" type="checkbox" aria-describedby="voice-interrupt-help" /> Перебивать Маняшу голосом</label>
+                <p id="voice-interrupt-help">Лучше включать в наушниках. Когда выключено, микрофон не передаёт звук во время ответа: шум и эхо не обрывают речь. Кнопка перебивания доступна всегда во время ответа.</p>
               </div>
             </details>
 

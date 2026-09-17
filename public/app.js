@@ -2,7 +2,7 @@ import {
   MODE_DEFINITIONS,
   buildSystemInstruction,
   resolveConversationConfig,
-} from "/persona.js?v=0.3.0";
+} from "/persona.js?v=0.5.0";
 import { MEMORY_KEY, MemoryStore, ConversationContext, runMemoryTool } from "./memory.js";
 import { createMemoryPanel } from "./memory-panel.js";
 import { COMPANION_TOOLS } from "./companion-tools.js";
@@ -22,6 +22,8 @@ const elements = {
   activeSettings: document.querySelector("#active-settings"),
   button: document.querySelector("#conversation-button"),
   buttonLabel: document.querySelector("#button-label"),
+  interrupt: document.querySelector("#interrupt-button"),
+  voiceInterrupt: document.querySelector("#voice-interrupt"),
   connection: document.querySelector("#connection-value"),
   emptyTranscript: document.querySelector("#empty-transcript"),
   error: document.querySelector("#error-message"),
@@ -44,7 +46,6 @@ const state = {
   connectAbortController: null,
   connected: false,
   connecting: false,
-  fallbackSpeech: null,
   interactionId: 0,
   interruptionStartedAt: null,
   lastLocalSpeechAt: null,
@@ -75,6 +76,10 @@ const state = {
   lastModelMessage: null,
   toolGeneration: 0,
   refreshAfterForget: false,
+  replyPlaying: false,
+  micResumeAt: 0,
+  micPaused: false,
+  generationComplete: false,
   userMessage: null,
   userText: "",
   websocket: null,
@@ -84,6 +89,7 @@ function setUiState(nextState, text) {
   elements.status.dataset.state = nextState;
   elements.statusText.textContent = text;
   elements.mascot.dataset.state = nextState;
+  elements.interrupt.disabled = !state.sessionActive || !state.replyPlaying;
   elements.connection.textContent =
     nextState === "listening" || nextState === "speaking"
       ? "Стабильно"
@@ -101,6 +107,7 @@ function setConversationControls(active) {
   elements.buttonLabel.textContent = active ? "Завершить разговор" : "Начать разговор";
   elements.voice.disabled = active;
   elements.mode.disabled = active;
+  elements.voiceInterrupt.disabled = active;
   const modeLocksProfanity = Boolean(MODE_DEFINITIONS[elements.mode.value]?.profanity);
   elements.profanity.disabled = active || modeLocksProfanity;
   if (active) elements.settings.open = false;
@@ -109,10 +116,8 @@ function setConversationControls(active) {
 
 function syncConversationSettings({ modeChanged = false } = {}) {
   const modeDefinition = MODE_DEFINITIONS[elements.mode.value] ?? MODE_DEFINITIONS.friend;
-  if (modeDefinition.profanity && modeDefinition.profanity !== "roast") {
+  if (modeDefinition.profanity) {
     elements.profanity.value = modeDefinition.profanity;
-  } else if (modeDefinition.profanity === "roast") {
-    elements.profanity.value = "free";
   } else if (modeChanged) {
     elements.profanity.value = modeDefinition.defaultProfanity ?? "moderate";
   }
@@ -120,7 +125,7 @@ function syncConversationSettings({ modeChanged = false } = {}) {
   const config = resolveConversationConfig(elements.mode.value, elements.profanity.value);
   elements.modeHelp.textContent = config.modeDefinition.help;
   elements.profanityHelp.textContent = config.profanityDefinition.help;
-  elements.activeSettings.textContent = `Режим: ${config.modeDefinition.label}. Мат: ${config.profanityDefinition.label.toLocaleLowerCase("ru")}. Голос: ${elements.voice.value}.`;
+  elements.activeSettings.textContent = `Режим: ${config.modeDefinition.label}. Мат: ${config.profanityDefinition.label.toLocaleLowerCase("ru")}. Голос: ${elements.voice.value}. ${elements.voiceInterrupt.checked ? "Можно перебивать голосом — лучше в наушниках." : "Защита от обрывов включена — перебивание кнопкой."}`;
   setConversationControls(state.sessionActive);
 }
 
@@ -138,30 +143,16 @@ function beginResponseWatchdog() {
 
   state.responseWatchdog = setTimeout(() => {
     if (!state.sessionActive || !state.connected || !state.awaitingResponse) return;
-    send({
-      clientContent: {
-        turns: [
-          {
-            role: "user",
-            parts: [
-              {
-                text: "Коротко ответь на предыдущую реплику. Если речь не была распознана, попроси повторить её.",
-              },
-            ],
-          },
-        ],
-        turnComplete: true,
-      },
-    });
-    setUiState("connecting", "Проверяю, что расслышала вас");
-  }, 5_000);
+    // Never inject a new user turn: turnComplete:true cancels live generation.
+    setUiState("connecting", "Ответ готовится — жду Маняшу");
+  }, 10_000);
 
   state.responseWatchdogFinal = setTimeout(() => {
     if (!state.sessionActive || !state.awaitingResponse) return;
     clearResponseWatchdog();
     state.locallyInterrupted = false;
     setUiState("listening", "Не расслышала — повторите фразу");
-  }, 11_000);
+  }, 30_000);
 }
 
 function getSystemInstruction() {
@@ -244,7 +235,7 @@ class MicrophoneStream {
     });
 
     this.context = new AudioContext({ latencyHint: "interactive" });
-    await this.context.audioWorklet.addModule("/capture.worklet.js?v=0.1.1");
+    await this.context.audioWorklet.addModule("/capture.worklet.js?v=0.1.2");
     this.node = new AudioWorkletNode(this.context, "capture-processor", {
       numberOfInputs: 1,
       numberOfOutputs: 0,
@@ -277,42 +268,67 @@ class StreamingPlayer {
     this.onDrained = onDrained;
     this.context = null;
     this.node = null;
+    this.pending = Promise.resolve();
+    this.generation = 0;
+    this.initPromise = null;
   }
 
-  async init() {
-    if (this.context) return;
+  init() {
+    if (!this.initPromise) this.initPromise = this.initialize();
+    return this.initPromise;
+  }
+
+  async initialize() {
     this.context = new AudioContext({ latencyHint: "interactive" });
-    await this.context.audioWorklet.addModule("/playback.worklet.js?v=0.2.0");
+    await this.context.audioWorklet.addModule("/playback.worklet.js?v=0.3.0");
     this.node = new AudioWorkletNode(this.context, "playback-processor", {
       outputChannelCount: [1],
     });
+    this.node.port.postMessage({ type: "clear", generation: this.generation });
     this.node.port.onmessage = (event) => {
       if (event.data?.type === "level") this.onLevel(event.data.value);
-      if (event.data?.type === "drained") this.onDrained();
+      if (event.data?.type === "drained" && event.data.generation === this.generation) this.onDrained();
     };
     this.node.connect(this.context.destination);
     await this.context.resume();
   }
 
-  async push(base64Audio, sourceRate = 24000) {
-    await this.init();
-    if (this.context.state === "suspended") await this.context.resume();
-    const decoded = base64ToFloat32(base64Audio);
-    const samples = resampleLinear(decoded, sourceRate, this.context.sampleRate);
-    this.node.port.postMessage({ type: "push", samples }, [samples.buffer]);
+  enqueue(operation) {
+    const next = this.pending.then(operation);
+    this.pending = next.catch(() => {});
+    return next;
+  }
+
+  push(base64Audio, sourceRate = 24000) {
+    const generation = this.generation;
+    return this.enqueue(async () => {
+      if (generation !== this.generation) return;
+      await this.init();
+      if (this.context.state === "suspended") await this.context.resume();
+      if (generation !== this.generation) return;
+      const decoded = base64ToFloat32(base64Audio);
+      const samples = resampleLinear(decoded, sourceRate, this.context.sampleRate);
+      this.node.port.postMessage({ type: "push", samples, generation }, [samples.buffer]);
+    });
   }
 
   clear() {
-    this.node?.port.postMessage({ type: "clear" });
+    this.generation += 1;
+    this.node?.port.postMessage({ type: "clear", generation: this.generation });
     document.documentElement.style.setProperty("--orb-level", "0");
   }
 
   completeTurn() {
-    this.node?.port.postMessage({ type: "turn-complete" });
+    const generation = this.generation;
+    return this.enqueue(() => {
+      if (generation === this.generation) this.node?.port.postMessage({ type: "turn-complete", generation });
+    });
   }
 
   async destroy() {
     this.clear();
+    await this.pending;
+    if (this.initPromise) await this.initPromise.catch(() => {});
     this.node?.disconnect();
     if (this.context && this.context.state !== "closed") await this.context.close();
     this.node = null;
@@ -347,17 +363,8 @@ function handleLocalVoiceActivity(rms) {
       if (!state.localSpeechActive) clearResponseWatchdog();
       state.localSpeechActive = true;
       state.lastLocalSpeechAt = now;
-      if (elements.mascot.dataset.state === "speaking" && !state.locallyInterrupted) {
-        state.locallyInterrupted = true;
-        state.interruptionStartedAt = now;
-        clearResponseWatchdog();
-        state.playback?.clear();
-        stopFallbackSpeech();
-        state.modelAudioReceivedInTurn = false;
-        state.pendingTurnComplete = false;
-        state.turnOutputText = "";
-        setUiState("listening", "Слушаю вас");
-      }
+      // RMS is not speech recognition. Only a server interruption or the button
+      // may discard an answer; a fan/click/echo must never clear playback here.
       state.latencyCapturedForTurn = false;
     }
     return;
@@ -374,14 +381,23 @@ function handleLocalVoiceActivity(rms) {
     state.localSpeechActive = false;
     state.lastSpeechEndedAt = performance.now();
     state.latencyCapturedForTurn = false;
-    send({ realtimeInput: { audioStreamEnd: true } });
-    setUiState("connecting", "Формулирую ответ");
-    beginResponseWatchdog();
+    if (!state.replyPlaying) {
+      setUiState("connecting", "Формулирую ответ");
+      beginResponseWatchdog();
+    }
   }
 }
 
 function handleMicrophoneAudio(samples, rms) {
   if (!state.connected) return;
+  if ((!elements.voiceInterrupt.checked && state.replyPlaying) || performance.now() < state.micResumeAt) {
+    if (!state.micPaused) {
+      state.micPaused = true;
+      send({ realtimeInput: { audioStreamEnd: true } });
+    }
+    return;
+  }
+  state.micPaused = false;
   handleLocalVoiceActivity(rms);
   send({
     realtimeInput: {
@@ -391,6 +407,40 @@ function handleMicrophoneAudio(samples, rms) {
       },
     },
   });
+}
+
+function resetLocalSpeech() {
+  state.localSpeechFrames = 0;
+  state.localSpeechActive = false;
+  state.localSilenceStartedAt = null;
+}
+
+function markReplyPlaying() {
+  state.replyPlaying = true;
+  elements.interrupt.disabled = !state.sessionActive;
+  resetLocalSpeech();
+}
+
+function finishPlayback() {
+  state.replyPlaying = false;
+  state.modelAudioReceivedInTurn = false;
+  state.pendingTurnComplete = false;
+  state.turnOutputText = "";
+  state.micResumeAt = performance.now() + 300;
+  resetLocalSpeech();
+  if (state.sessionActive) setUiState(state.connected ? "listening" : "connecting", state.connected ? "Слушаю вас" : "Восстанавливаю разговор");
+}
+
+function interruptReply() {
+  if (!state.sessionActive || !state.replyPlaying) return;
+  // If generation already ended, only the local queue is stopped. There will
+  // be no server interruption event to release a suppression flag afterwards.
+  state.locallyInterrupted = !state.generationComplete;
+  state.toolGeneration += 1;
+  state.playback?.clear();
+  finishPlayback();
+  elements.button.focus();
+  setUiState("listening", "Ответ остановлен — говорите");
 }
 
 function createMessage(speaker) {
@@ -477,57 +527,6 @@ function renderSources() {
   state.pendingSources = [];
 }
 
-function stopFallbackSpeech() {
-  if (!("speechSynthesis" in window)) return;
-  state.fallbackSpeech = null;
-  if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-    window.speechSynthesis.cancel();
-  }
-}
-
-function speakWithBrowserFallback(text) {
-  if (
-    !("speechSynthesis" in window) ||
-    typeof window.SpeechSynthesisUtterance !== "function" ||
-    !text.trim()
-  ) {
-    return false;
-  }
-
-  stopFallbackSpeech();
-  const utterance = new window.SpeechSynthesisUtterance(text.trim());
-  utterance.lang = "ru-RU";
-  utterance.rate = 1.03;
-  utterance.pitch = 1;
-  utterance.volume = 1;
-  const russianVoice = window.speechSynthesis
-    .getVoices()
-    .find((voice) => voice.lang.toLocaleLowerCase("en").startsWith("ru"));
-  if (russianVoice) utterance.voice = russianVoice;
-
-  utterance.addEventListener("start", () => {
-    if (state.fallbackSpeech !== utterance) return;
-    setUiState("speaking", "Отвечаю — меня можно перебить");
-  });
-  utterance.addEventListener("end", () => {
-    if (state.fallbackSpeech !== utterance) return;
-    state.fallbackSpeech = null;
-    state.turnOutputText = "";
-    if (state.sessionActive) setUiState("listening", "Слушаю вас");
-  });
-  utterance.addEventListener("error", (event) => {
-    if (state.fallbackSpeech !== utterance) return;
-    state.fallbackSpeech = null;
-    state.turnOutputText = "";
-    if (event.error === "interrupted" || event.error === "canceled") return;
-    showError("Не удалось озвучить ответ. Проверьте настройки звука браузера.");
-  });
-
-  state.fallbackSpeech = utterance;
-  window.speechSynthesis.speak(utterance);
-  return true;
-}
-
 function getAudioSampleRate(mimeType = "") {
   const match = /(?:^|;)\s*rate=(\d+)/i.exec(mimeType);
   const rate = Number(match?.[1]);
@@ -535,26 +534,20 @@ function getAudioSampleRate(mimeType = "") {
 }
 
 function handleAudioChunk(base64Audio, mimeType) {
-  if (state.locallyInterrupted) {
-    const now = performance.now();
-    const speechRecentlyActive = state.lastLocalSpeechAt && now - state.lastLocalSpeechAt < 450;
-    const interruptionStillFresh =
-      state.interruptionStartedAt && now - state.interruptionStartedAt < 1_500;
-    if (speechRecentlyActive || interruptionStillFresh) return;
-    state.locallyInterrupted = false;
-    state.interruptionStartedAt = null;
-  }
-  if (state.fallbackSpeech) stopFallbackSpeech();
+  if (state.locallyInterrupted) return;
+  state.generationComplete = false;
   clearResponseWatchdog();
   state.modelAudioReceivedInTurn = true;
+  markReplyPlaying();
   if (!state.latencyCapturedForTurn && state.lastSpeechEndedAt) {
     const latencyMs = Math.max(0, Math.round(performance.now() - state.lastSpeechEndedAt));
     elements.latency.textContent = `${latencyMs} мс`;
     state.latencyCapturedForTurn = true;
   }
   state.pendingTurnComplete = false;
-  setUiState("speaking", "Отвечаю — меня можно перебить");
+  setUiState("speaking", elements.voiceInterrupt.checked ? "Отвечаю — можно перебить голосом" : "Отвечаю — можно нажать «Перебить ответ»");
   state.playback.push(base64Audio, getAudioSampleRate(mimeType)).catch(() => {
+    finishPlayback();
     showError("Не удалось воспроизвести ответ. Проверьте настройки звука браузера.");
   });
 }
@@ -702,8 +695,10 @@ async function parseServerMessage(payload) {
     );
   }
 
-  if (content?.outputTranscription) {
+  if (content?.outputTranscription && !state.locallyInterrupted) {
+    state.generationComplete = false;
     clearResponseWatchdog();
+    markReplyPlaying();
     updateTranscript(
       "model",
       content.outputTranscription.text,
@@ -719,7 +714,7 @@ async function parseServerMessage(payload) {
     state.locallyInterrupted = false;
     state.interruptionStartedAt = null;
     state.playback.clear();
-    stopFallbackSpeech();
+    finishPlayback();
     state.modelAudioReceivedInTurn = false;
     state.pendingTurnComplete = false;
     state.turnOutputText = "";
@@ -733,24 +728,28 @@ async function parseServerMessage(payload) {
   }
 
   if (content?.turnComplete) {
-    finishContextTurn();
+    state.generationComplete = true;
+    const wasInterrupted = state.locallyInterrupted;
+    finishContextTurn({ interrupted: wasInterrupted });
     renderSources();
     clearResponseWatchdog();
     state.locallyInterrupted = false;
     state.interruptionStartedAt = null;
-    state.pendingTurnComplete = true;
-    state.playback?.completeTurn();
+    state.pendingTurnComplete = !wasInterrupted && state.modelAudioReceivedInTurn;
+    if (state.pendingTurnComplete) state.playback?.completeTurn()?.catch(() => {
+      finishPlayback(); showError("Не удалось завершить озвучку. Начните разговор снова.");
+    });
     if (state.outputMessage) {
       state.outputMessage.dataset.pending = "false";
       state.outputMessage = null;
       state.outputText = "";
     }
-    if (!state.modelAudioReceivedInTurn) {
+    if (wasInterrupted) {
+      finishPlayback();
+    } else if (!state.modelAudioReceivedInTurn) {
       state.pendingTurnComplete = false;
-      if (!speakWithBrowserFallback(state.turnOutputText)) {
-        state.turnOutputText = "";
-        setUiState("listening", "Ответ без звука — проверьте настройки браузера");
-      }
+      finishPlayback();
+      showError("Ответ пришёл без звука. Повторите фразу или начните разговор заново — другой голос не включён.");
     }
     refreshAfterForgetting();
   }
@@ -786,8 +785,8 @@ function getSetupMessage(resumptionHandle = null) {
         automaticActivityDetection: {
           disabled: false,
           prefixPaddingMs: 180,
-          silenceDurationMs: 700,
-          startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
+          silenceDurationMs: 800,
+          startOfSpeechSensitivity: "START_SENSITIVITY_LOW",
           endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
         },
       },
@@ -917,6 +916,15 @@ async function reconnectSession({ forceFresh = false } = {}) {
   state.reconnecting = true;
   state.connected = false;
   state.connecting = true;
+  if (forceFresh || !state.resumptionHandle) {
+    // A fresh provider session cannot send the old turn's completion marker.
+    // Finish audio already received, otherwise the protected mic stays gated.
+    state.locallyInterrupted = false;
+    if (state.modelAudioReceivedInTurn) {
+      state.pendingTurnComplete = true;
+      state.playback.completeTurn()?.catch(() => { finishPlayback(); });
+    } else finishPlayback();
+  }
   setConversationControls(true);
   setUiState("connecting", "Восстанавливаю разговор");
 
@@ -958,10 +966,7 @@ async function connect() {
       },
       () => {
         if (state.pendingTurnComplete) {
-          state.pendingTurnComplete = false;
-          state.modelAudioReceivedInTurn = false;
-          state.turnOutputText = "";
-          setUiState("listening", "Слушаю вас");
+          finishPlayback();
         }
       },
     );
@@ -1031,6 +1036,10 @@ function resetUi() {
   state.lastModelMessage = null;
   state.toolGeneration += 1;
   state.refreshAfterForget = false;
+  state.replyPlaying = false;
+  state.micResumeAt = 0;
+  state.micPaused = false;
+  state.generationComplete = false;
   clearInterval(state.sessionTimer);
   state.sessionTimer = null;
   state.sessionStartedAt = null;
@@ -1048,7 +1057,6 @@ async function disconnect({ preserveError = false } = {}) {
   clearResponseWatchdog();
   state.connected = false;
   state.connecting = false;
-  stopFallbackSpeech();
   if (state.websocket) {
     const socket = state.websocket;
     state.websocket = null;
@@ -1061,27 +1069,52 @@ async function disconnect({ preserveError = false } = {}) {
   resetUi();
 }
 
+const SETTINGS_KEY = "manyasha.conversation.v3";
+
+function saveConversationSettings() {
+  try {
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+      mode: elements.mode.value, profanity: elements.profanity.value,
+      voice: elements.voice.value, voiceInterrupt: elements.voiceInterrupt.checked,
+    }));
+  } catch { /* Conversation still works when storage is unavailable. */ }
+}
+
+function loadConversationSettings() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || "null");
+    if (!saved) return;
+    if (MODE_DEFINITIONS[saved.mode]) elements.mode.value = saved.mode;
+    if (["off", "moderate", "free", "always"].includes(saved.profanity)) elements.profanity.value = saved.profanity;
+    if (["Kore", "Aoede", "Puck", "Fenrir", "Charon"].includes(saved.voice)) elements.voice.value = saved.voice;
+    elements.voiceInterrupt.checked = saved.voiceInterrupt === true;
+  } catch { /* Keep the safe conversation defaults if preferences are invalid. */ }
+}
+
 elements.button.addEventListener("click", () => {
   if (state.sessionActive) disconnect();
   else connect();
 });
+elements.interrupt.addEventListener("click", interruptReply);
 
 elements.mode.addEventListener("change", () => {
   syncConversationSettings({ modeChanged: true });
+  saveConversationSettings();
 });
 
 elements.profanity.addEventListener("change", () => {
   syncConversationSettings();
+  saveConversationSettings();
 });
 
-elements.voice.addEventListener("change", syncConversationSettings);
+elements.voice.addEventListener("change", () => { syncConversationSettings(); saveConversationSettings(); });
+elements.voiceInterrupt.addEventListener("change", () => { syncConversationSettings(); saveConversationSettings(); });
 
 window.addEventListener("pagehide", () => {
   const socket = state.websocket;
   state.websocket = null;
   socket?.close();
   state.microphone?.stream?.getTracks().forEach((track) => track.stop());
-  stopFallbackSpeech();
 });
 
 setUiState("idle", "Готова к разговору");
@@ -1092,4 +1125,5 @@ window.addEventListener("storage", async (event) => {
   conversationContext.clear(); memoryStore.load(); memoryPanel.render();
   memoryPanel.announce("Память изменена в другой вкладке. Начните новый разговор, чтобы использовать обновлённые заметки.");
 });
+loadConversationSettings();
 syncConversationSettings();

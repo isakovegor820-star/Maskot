@@ -25,7 +25,7 @@ class CaptureProcessor extends AudioWorkletProcessor {
       this.readPosition += this.resampleRatio;
     }
 
-    const consumed = Math.floor(this.readPosition);
+    const consumed = Math.min(Math.floor(this.readPosition), this.inputBuffer.length);
     if (consumed > 0) {
       this.inputBuffer.splice(0, consumed);
       this.readPosition -= consumed;

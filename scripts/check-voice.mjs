@@ -9,7 +9,8 @@ import { COMPANION_TOOLS } from "../public/companion-tools.js";
 import { searchWeb } from "../web-search.mjs";
 
 loadLocalEnv();
-const [label = "check", mode = "friend", profanity = "free", ...questions] = process.argv.slice(2);
+const [label = "check", mode = "friend", profanity = "moderate", ...questions] = process.argv.slice(2);
+const voice = process.env.VOICE_CHECK_VOICE?.trim() || "Aoede";
 if (!/^[a-z0-9-]+$/i.test(label)) throw new Error("Use a simple output label");
 const output = resolve("voice-checks", label);
 mkdirSync(output, { recursive: true });
@@ -17,14 +18,16 @@ const prompts = questions.length ? questions : ["Как дела?"];
 // Shared synthetic test memory; never reads a real browser profile.
 const memoryFile = resolve("voice-checks", "synthetic-memory.json");
 const storage = {
-  getItem: () => existsSync(memoryFile) ? readFileSync(memoryFile, "utf8") : null,
+  getItem: () => process.env.VOICE_CHECK_MEMORY === "off"
+    ? JSON.stringify({ version: 1, enabled: false, notes: [] })
+    : existsSync(memoryFile) ? readFileSync(memoryFile, "utf8") : null,
   setItem: (_key, value) => writeFileSync(memoryFile, value),
 };
 const controls = new Map();
 const document = {
   querySelector(selector) {
     if (!controls.has(selector)) controls.set(selector, {
-      value: selector === "#mode-select" ? mode : selector === "#profanity-select" ? profanity : "Puck",
+      value: selector === "#mode-select" ? mode : selector === "#profanity-select" ? profanity : voice,
     });
     return controls.get(selector);
   },
@@ -60,13 +63,34 @@ function wav(pcm, rate) {
 const results = [];
 await new Promise((resolveCheck, rejectCheck) => {
   const socket = new WebSocket(`wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContentConstrained?access_token=${encodeURIComponent(token.name)}`);
-  let index = 0, text = "", chunks = [], rate = 24000, timeout, finished = false;
-  const fail = (error) => { if (finished) return; finished = true; clearTimeout(timeout); socket.close(); rejectCheck(error); };
+  let index = 0, text = "", inputText = "", chunks = [], rate = 24000, timeout, audioTimer, finished = false;
+  const fail = (error) => { if (finished) return; finished = true; clearTimeout(timeout); clearTimeout(audioTimer); socket.close(); rejectCheck(error); };
   const send = (message) => socket.send(JSON.stringify(message));
   const next = () => {
     clearTimeout(timeout);
-    timeout = setTimeout(() => fail(new Error("Live response timed out")), 30000);
-    send({ clientContent: { turns: [{ role: "user", parts: [{ text: prompts[index] }] }], turnComplete: true } });
+    timeout = setTimeout(() => fail(new Error("Live response timed out")), 60000);
+    if (!prompts[index].startsWith("@audio:")) {
+      send({ clientContent: { turns: [{ role: "user", parts: [{ text: prompts[index] }] }], turnComplete: true } });
+      return;
+    }
+    // Replay generated test speech as real microphone-format input, at real time.
+    const file = readFileSync(resolve(prompts[index].slice(7)));
+    if (file.toString("ascii", 36, 40) !== "data") throw new Error("Expected test WAV from this script");
+    const sourceRate = file.readUInt32LE(24), raw = file.subarray(44);
+    const floats = Float32Array.from({ length: raw.length / 2 }, (_, i) => raw.readInt16LE(i * 2) / 32768);
+    const resample = vm.runInContext("resampleLinear", context);
+    const samples = resample(floats, sourceRate, 16000);
+    const pcm = Buffer.alloc(samples.length * 2 + 32000); // One second of trailing silence for server VAD.
+    for (let i = 0; i < samples.length; i++) pcm.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768))), i * 2);
+    let cursor = 0;
+    const stream = () => {
+      if (finished) return;
+      if (cursor >= pcm.length) { send({ realtimeInput: { audioStreamEnd: true } }); return; }
+      const chunk = pcm.subarray(cursor, cursor + 1280); cursor += chunk.length;
+      send({ realtimeInput: { audio: { data: chunk.toString("base64"), mimeType: "audio/pcm;rate=16000" } } });
+      audioTimer = setTimeout(stream, 40);
+    };
+    stream();
   };
   timeout = setTimeout(() => fail(new Error("Setup timed out")), 20000);
   socket.addEventListener("open", () => send(setup));
@@ -93,6 +117,7 @@ await new Promise((resolveCheck, rejectCheck) => {
         send({ toolResponse: { functionResponses: responses } });
       }
       const content = payload.serverContent;
+      inputText += content?.inputTranscription?.text ?? "";
       for (const part of content?.modelTurn?.parts ?? []) {
         if (part.inlineData?.data) {
           chunks.push(Buffer.from(part.inlineData.data, "base64"));
@@ -104,11 +129,12 @@ await new Promise((resolveCheck, rejectCheck) => {
         const pcm = Buffer.concat(chunks);
         const audioFile = pcm.length ? resolve(output, `${index + 1}.wav`) : null;
         if (audioFile) writeFileSync(audioFile, wav(pcm, rate));
-        const result = { prompt: prompts[index], text, audioBytes: pcm.length,
+        const result = { prompt: prompts[index], ...(inputText ? { recognizedInput: inputText } : {}), text, audioBytes: pcm.length,
           audioSeconds: Number((pcm.length / rate / 2).toFixed(2)), audioFile };
         results.push(result);
         console.log(JSON.stringify(result));
-        index++; text = ""; chunks = [];
+        clearTimeout(audioTimer);
+        index++; text = ""; inputText = ""; chunks = [];
         if (index < prompts.length) next();
         else { finished = true; clearTimeout(timeout); socket.close(); resolveCheck(); }
       }
@@ -117,5 +143,5 @@ await new Promise((resolveCheck, rejectCheck) => {
   socket.addEventListener("error", () => fail(new Error("WebSocket failed")));
   socket.addEventListener("close", (event) => { if (!finished) fail(new Error(`Closed: ${event.code} ${event.reason}`)); });
 });
-writeFileSync(resolve(output, "results.json"), JSON.stringify({ mode, profanity, results }, null, 2));
+writeFileSync(resolve(output, "results.json"), JSON.stringify({ mode, profanity, voice, results }, null, 2));
 if (results.some((result) => !result.audioBytes)) process.exitCode = 2;

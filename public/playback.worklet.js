@@ -9,6 +9,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     this.turnComplete = false;
     this.minBufferedFrames = Math.round(sampleRate * 0.06);
     this.framesSinceLevel = 0;
+    this.generation = 0;
 
     this.port.onmessage = (event) => {
       if (event.data?.type === "push" && event.data.samples) {
@@ -21,6 +22,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
         if (this.bufferedFrames > 0) this.started = true;
       }
       if (event.data?.type === "clear") {
+        this.generation = event.data.generation ?? this.generation + 1;
         this.queue = [];
         this.current = null;
         this.offset = 0;
@@ -39,6 +41,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 
     if (!this.started) {
       output.fill(0);
+      if (this.turnComplete && this.bufferedFrames === 0) {
+        this.turnComplete = false;
+        this.port.postMessage({ type: "drained", generation: this.generation });
+      }
       return true;
     }
 
@@ -63,7 +69,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     if (this.turnComplete && !hasAudio && this.bufferedFrames === 0 && !this.current) {
       this.started = false;
       this.turnComplete = false;
-      this.port.postMessage({ type: "drained" });
+      this.port.postMessage({ type: "drained", generation: this.generation });
     } else if (!this.turnComplete && !hasAudio && this.bufferedFrames === 0 && !this.current) {
       this.started = false;
     }
